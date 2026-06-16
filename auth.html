@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WLM Calculator — Secure Sign In</title>
+<style>
+  :root {
+    --primary: #0f3460; --accent: #1a6fa8; --bg: #f4f7fb;
+    --card: #fff; --border: #d0dae8; --text: #1e2a3a;
+    --muted: #6b7c93; --error: #c62828;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+  header { background: var(--primary); color: #fff; padding: 18px 32px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 20px; font-weight: 700; }
+  header .sub { font-size: 12px; opacity: 0.7; margin-top: 3px; }
+  .wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 38px 40px; width: 100%; max-width: 420px; box-shadow: 0 6px 24px rgba(0,0,0,0.08); }
+  .icon { font-size: 40px; text-align: center; margin-bottom: 18px; }
+  h2 { font-size: 20px; color: var(--primary); margin-bottom: 8px; }
+  .desc { font-size: 13px; color: var(--muted); margin-bottom: 26px; line-height: 1.6; }
+  .domain-badge { display: inline-block; background: #e8f0fe; color: var(--accent); padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; margin: 1px; }
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 6px; }
+  .field input { width: 100%; padding: 11px 14px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: #fafbfd; transition: border 0.2s; }
+  .field input:focus { outline: none; border-color: var(--accent); background: #fff; }
+  .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; font-size: 14px; font-weight: 700; cursor: pointer; background: var(--accent); color: #fff; transition: background 0.2s; }
+  .btn:hover { background: var(--primary); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .msg { padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; display: none; }
+  .msg.err  { background: #fce4ec; color: var(--error); border: 1px solid #ef9a9a; display: block; }
+  .msg.ok   { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; display: block; }
+  #otpSection { display: none; }
+  .footer-row { display: flex; justify-content: space-between; margin-top: 14px; font-size: 12px; }
+  .link { color: var(--accent); cursor: pointer; }
+  .link:hover { text-decoration: underline; }
+  .link.dim { color: var(--muted); }
+  .link.dim.active { color: var(--accent); }
+  footer { text-align: center; padding: 16px; font-size: 11px; color: var(--muted); }
+  .otp-big input { letter-spacing: 10px; font-size: 22px; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🖥 Infrastructure Sizing &amp; Cost Estimation</h1>
+    <div class="sub">WLM Platform · Secure Access</div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <div class="icon">🔐</div>
+
+    <!-- Step 1: email -->
+    <div id="emailSection">
+      <h2>Sign in to access</h2>
+      <p class="desc">
+        Restricted to authorised domains:<br>
+        <span class="domain-badge">@idrica.com</span>
+        <span class="domain-badge">@xylem.com</span>
+      </p>
+      <div id="emailMsg" class="msg"></div>
+      <div class="field">
+        <label>Work Email Address</label>
+        <input type="email" id="emailInput" placeholder="yourname@idrica.com" autocomplete="email">
+      </div>
+      <button class="btn" id="sendBtn" onclick="sendOtp()">Send Access Code →</button>
+    </div>
+
+    <!-- Step 2: OTP -->
+    <div id="otpSection">
+      <h2>Check your email</h2>
+      <p class="desc">We sent a 6-digit code to <strong id="sentTo"></strong>. It expires in 10 minutes.</p>
+      <div id="otpMsg" class="msg"></div>
+      <div class="field otp-big">
+        <label>6-Digit Access Code</label>
+        <input type="text" id="otpInput" placeholder="······" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+      </div>
+      <button class="btn" id="verifyBtn" onclick="verifyOtp()">Verify &amp; Open Calculator →</button>
+      <div class="footer-row">
+        <span class="link dim" onclick="goBack()">← Different email</span>
+        <span id="resendSpan">Resend in <span id="countdown">60</span>s</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>WLM Platform · For authorised personnel only</footer>
+
+<script>
+let challenge = null, userEmail = null, timer = null;
+
+// Already logged in? Skip to calculator
+fetch('/api/checkSession').then(r => { if (r.ok) location.href = '/'; }).catch(() => {});
+
+document.getElementById('emailInput').onkeydown = e => { if (e.key === 'Enter') sendOtp(); };
+document.getElementById('otpInput').onkeydown  = e => { if (e.key === 'Enter') verifyOtp(); };
+document.getElementById('otpInput').oninput    = e => {
+  const v = e.target.value.replace(/\D/g,'');
+  e.target.value = v;
+  if (v.length === 6) verifyOtp();
+};
+
+function showMsg(id, type, text) {
+  const el = document.getElementById(id);
+  el.className = 'msg ' + type;
+  el.textContent = text;
+}
+function clearMsg(id) { const el = document.getElementById(id); el.className='msg'; el.textContent=''; }
+
+async function sendOtp() {
+  const email = document.getElementById('emailInput').value.trim().toLowerCase();
+  if (!email) { showMsg('emailMsg','err','Please enter your email address.'); return; }
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true; btn.textContent = 'Sending…'; clearMsg('emailMsg');
+
+  try {
+    const r = await fetch('/api/sendOtp', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({email})
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      showMsg('emailMsg','err', d.error || 'Failed to send. Please try again.');
+      btn.disabled = false; btn.textContent = 'Send Access Code →'; return;
+    }
+    challenge = d.challenge;
+    userEmail = email;
+    document.getElementById('sentTo').textContent = email;
+    document.getElementById('emailSection').style.display = 'none';
+    document.getElementById('otpSection').style.display = '';
+    document.getElementById('otpInput').focus();
+    startCountdown();
+  } catch {
+    showMsg('emailMsg','err','Network error. Check your connection.');
+    btn.disabled = false; btn.textContent = 'Send Access Code →';
+  }
+}
+
+async function verifyOtp() {
+  const otp = document.getElementById('otpInput').value.replace(/\D/g,'');
+  if (otp.length !== 6) { showMsg('otpMsg','err','Please enter the complete 6-digit code.'); return; }
+  const btn = document.getElementById('verifyBtn');
+  btn.disabled = true; btn.textContent = 'Verifying…'; clearMsg('otpMsg');
+
+  try {
+    const r = await fetch('/api/verifyOtp', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({email: userEmail, otp, challenge})
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      showMsg('otpMsg','err', d.error || 'Invalid code. Please try again.');
+      btn.disabled = false; btn.textContent = 'Verify & Open Calculator →';
+      document.getElementById('otpInput').value = '';
+      document.getElementById('otpInput').focus(); return;
+    }
+    showMsg('otpMsg','ok','✓ Access granted. Opening calculator…');
+    setTimeout(() => location.href = '/', 700);
+  } catch {
+    showMsg('otpMsg','err','Network error. Please try again.');
+    btn.disabled = false; btn.textContent = 'Verify & Open Calculator →';
+  }
+}
+
+function goBack() {
+  clearInterval(timer);
+  document.getElementById('otpSection').style.display = 'none';
+  document.getElementById('emailSection').style.display = '';
+  document.getElementById('sendBtn').disabled = false;
+  document.getElementById('sendBtn').textContent = 'Send Access Code →';
+  challenge = null;
+}
+
+function startCountdown() {
+  let s = 60;
+  const cd = document.getElementById('countdown');
+  const rs = document.getElementById('resendSpan');
+  cd.textContent = s;
+  rs.innerHTML = `Resend in <span id="countdown">${s}</span>s`;
+  timer = setInterval(() => {
+    s--;
+    document.getElementById('countdown').textContent = s;
+    if (s <= 0) {
+      clearInterval(timer);
+      rs.innerHTML = '<span class="link active" onclick="resendCode()">Resend code</span>';
+    }
+  }, 1000);
+}
+
+function resendCode() {
+  document.getElementById('otpInput').value = '';
+  clearMsg('otpMsg');
+  document.getElementById('sendBtn').disabled = false;
+  sendOtp();
+}
+</script>
+</body>
+</html>

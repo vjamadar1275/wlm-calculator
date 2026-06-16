@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WLM Infrastructure Sizing &amp; Cost Estimation Calculator</title>
+<style>
+  :root {
+    --primary: #0f3460;
+    --accent: #1a6fa8;
+    --accent2: #e94560;
+    --bg: #f4f7fb;
+    --card: #ffffff;
+    --border: #d0dae8;
+    --text: #1e2a3a;
+    --muted: #6b7c93;
+    --green: #1a7a4a;
+    --aws: #ff9900;
+    --azure: #0089d6;
+    --onprem: #5c6bc0;
+    --success-bg: #e8f5e9;
+    --warn: #e65100;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: var(--text); font-size: 13px; }
+
+  /* ---- HEADER ---- */
+  header { background: var(--primary); color: #fff; padding: 18px 32px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.3px; }
+  header .subtitle { font-size: 12px; opacity: 0.75; margin-top: 3px; }
+  .header-badge { background: rgba(255,255,255,0.15); padding: 6px 14px; border-radius: 20px; font-size: 11px; }
+  .user-bar { display: flex; align-items: center; gap: 12px; }
+  .user-email { font-size: 12px; opacity: 0.85; }
+  .btn-logout { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 5px 14px; border-radius: 20px; font-size: 11px; cursor: pointer; transition: background 0.2s; }
+  .btn-logout:hover { background: rgba(255,255,255,0.28); }
+  #authOverlay { position:fixed;inset:0;background:#f4f7fb;z-index:9999;display:flex;align-items:center;justify-content:center;font-size:15px;color:#6b7c93; }
+
+  /* ---- LAYOUT ---- */
+  .container { max-width: 1100px; margin: 0 auto; padding: 20px 24px 40px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 22px 26px; margin-bottom: 18px; }
+  .card h2 { font-size: 15px; color: var(--primary); margin-bottom: 18px; padding-bottom: 10px; border-bottom: 2px solid var(--border); display: flex; align-items: center; gap: 8px; }
+  .card h3 { font-size: 13px; font-weight: 700; color: var(--primary); margin: 22px 0 10px; }
+
+  /* ---- PLATFORM TABS ---- */
+  .platform-tabs { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; width: fit-content; }
+  .platform-tab { padding: 9px 22px; cursor: pointer; font-size: 13px; font-weight: 600; background: #f8f9fb; border: none; border-right: 1px solid var(--border); color: var(--muted); transition: all 0.2s; }
+  .platform-tab:last-child { border-right: none; }
+  .platform-tab:hover { background: #edf2fa; }
+  .platform-tab.active[data-p="aws"] { background: #fff8ee; color: var(--aws); border-bottom: 3px solid var(--aws); }
+  .platform-tab.active[data-p="azure"] { background: #e8f4fd; color: var(--azure); border-bottom: 3px solid var(--azure); }
+  .platform-tab.active[data-p="onprem"] { background: #ede7f6; color: var(--onprem); border-bottom: 3px solid var(--onprem); }
+
+  /* ---- FORM GRID ---- */
+  .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px 20px; margin-bottom: 20px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-group.half { grid-column: span 2; }
+  label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  select, input[type="number"], input[type="text"] {
+    border: 1px solid var(--border); border-radius: 5px; padding: 8px 10px;
+    font-size: 13px; color: var(--text); background: #fafbfd; width: 100%;
+    transition: border 0.2s;
+  }
+  select:focus, input:focus { outline: none; border-color: var(--accent); background: #fff; }
+  .input-row { display: flex; gap: 10px; }
+  .input-row input { width: 100%; }
+
+  /* ---- SENSOR BREAKDOWN ---- */
+  .sensor-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .sensor-item { display: flex; flex-direction: column; gap: 4px; }
+  .sensor-item .badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; width: fit-content; }
+  .badge-hr { background: #fce4ec; color: #c62828; }
+  .badge-hy { background: #e3f2fd; color: #1565c0; }
+  .badge-lr { background: #e8f5e9; color: #2e7d32; }
+  .sensor-total { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .sensor-total.warn { color: var(--warn); font-weight: 600; }
+
+  /* ---- BUTTONS ---- */
+  .btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 10px 28px; font-size: 14px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
+  .btn-primary:hover { background: var(--primary); }
+  .btn-print { background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 9px 22px; font-size: 13px; font-weight: 600; cursor: pointer; margin-right: 10px; }
+  .btn-reset { background: #fff; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 9px 22px; font-size: 13px; cursor: pointer; }
+
+  /* ---- SUMMARY BANNER ---- */
+  .summary-banner { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
+  .summary-card { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 14px 16px; text-align: center; }
+  .summary-card .value { font-size: 22px; font-weight: 700; color: var(--primary); }
+  .summary-card .label { font-size: 10px; color: var(--muted); text-transform: uppercase; margin-top: 3px; }
+  .summary-card.highlight { background: var(--primary); border-color: var(--primary); }
+  .summary-card.highlight .value { color: #fff; font-size: 24px; }
+  .summary-card.highlight .label { color: rgba(255,255,255,0.7); }
+
+  /* ---- REF BANNER ---- */
+  .ref-banner { background: #eef2fa; border: 1px solid var(--border); border-radius: 6px; padding: 10px 16px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+  .ref-banner strong { color: var(--primary); }
+
+  /* ---- TABLES ---- */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 6px; }
+  thead { background: var(--primary); color: #fff; }
+  thead th { padding: 9px 11px; text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.3px; white-space: nowrap; }
+  tbody tr:nth-child(even) { background: #f8fafd; }
+  tbody td { padding: 8px 11px; border-bottom: 1px solid #edf0f5; vertical-align: middle; }
+  tbody tr:hover { background: #eef4fb; }
+  tfoot td { padding: 9px 11px; font-weight: 700; background: #e8edf5; border-top: 2px solid var(--border); }
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+  .qty-badge { background: var(--primary); color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+  .spec-chip { display: inline-block; background: #eef2fa; color: var(--accent); border-radius: 4px; padding: 1px 6px; font-size: 10px; margin: 1px; }
+  .storage-type { display: inline-flex; align-items: center; gap: 5px; }
+  .storage-icon { font-size: 14px; }
+  .cost-col { font-weight: 600; color: var(--green); }
+  .total-col { font-weight: 700; color: var(--primary); }
+
+  /* ---- ONPREM CAPEX / OPEX ---- */
+  .cost-mode-note { background: #fff8e1; border: 1px solid #ffe082; border-radius: 5px; padding: 8px 12px; font-size: 11px; color: #5d4037; margin-bottom: 14px; }
+
+  /* ---- ADVANCED ---- */
+  details { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  summary { padding: 11px 16px; font-size: 13px; font-weight: 600; cursor: pointer; background: #f8fafd; color: var(--muted); list-style: none; display: flex; align-items: center; gap: 6px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "▶"; font-size: 10px; transition: transform 0.2s; }
+  details[open] summary::before { transform: rotate(90deg); }
+  .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 20px; padding: 18px 16px; }
+  .pricing-section h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .price-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; }
+  .price-row span { color: var(--text); }
+  .price-row input { width: 90px; text-align: right; }
+
+  /* ---- DISCLAIMER ---- */
+  .disclaimer { background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px; padding: 12px 16px; font-size: 11px; color: #5d4037; line-height: 1.6; margin-top: 18px; }
+  .disclaimer strong { color: #e65100; }
+
+  /* ---- PRINT ---- */
+  @media print {
+    body { background: #fff; font-size: 11px; }
+    header { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .no-print { display: none !important; }
+    .card { border: 1px solid #ccc; box-shadow: none; page-break-inside: avoid; }
+    thead { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .summary-card.highlight { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .container { padding: 10px 0; }
+    .summary-banner { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+  @page { margin: 15mm; }
+
+  /* ---- MISC ---- */
+  .section-divider { border: none; border-top: 1px dashed var(--border); margin: 16px 0; }
+  .actions-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .actions-right { display: flex; gap: 10px; }
+  .platform-indicator { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+  .pi-aws { background: #fff3cd; color: #cc6600; }
+  .pi-azure { background: #cce5ff; color: #004085; }
+  .pi-onprem { background: #ede7f6; color: #4527a0; }
+  .footnote { font-size: 10px; color: var(--muted); margin-top: 4px; }
+  .empty-state { text-align: center; padding: 40px; color: var(--muted); }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-state p { font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🖥 Infrastructure Sizing &amp; Cost Estimation Calculator</h1>
+    <div class="subtitle">WLM Platform · Supports AWS · Azure · On-Premises deployments</div>
+  </div>
+  <div class="user-bar">
+    <span class="user-email" id="userEmailDisplay">…</span>
+    <button class="btn-logout" onclick="logout()">Sign out</button>
+  </div>
+</header>
+<div id="authOverlay">Checking access…</div>
+
+<div class="container">
+
+  <!-- CONFIG CARD -->
+  <div class="card no-print">
+    <h2>⚙ 1 — Deployment Configuration</h2>
+
+    <div class="form-group" style="margin-bottom:16px;">
+      <label>Deployment Platform</label>
+      <div class="platform-tabs" id="platformTabs">
+        <button class="platform-tab active" data-p="aws" onclick="setPlatform('aws')">☁ AWS</button>
+        <button class="platform-tab" data-p="azure" onclick="setPlatform('azure')">☁ Azure</button>
+        <button class="platform-tab" data-p="onprem" onclick="setPlatform('onprem')">🖥 On-Premises</button>
+      </div>
+    </div>
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Region / Location</label>
+        <select id="regionSelect"></select>
+      </div>
+      <div class="form-group">
+        <label>Project Type</label>
+        <select id="projectTypeSelect" onchange="onProjectTypeChange()">
+          <option value="Lite">Lite (≤ 5 sensors)</option>
+          <option value="Lite Plus">Lite Plus (≤ 10 sensors)</option>
+          <option value="Standard">Standard (≤ 20 sensors)</option>
+          <option value="Advance">Advance (≤ 50 sensors)</option>
+          <option value="Advance Plus">Advance Plus (≤ 100 sensors)</option>
+          <option value="Pro">Pro (≤ 300 sensors)</option>
+          <option value="Pro Max">Pro Max (≤ 500 sensors)</option>
+          <option value="Enterprise">Enterprise (≤ 1000 sensors)</option>
+          <option value="Enterprise++">Enterprise++ (≤ 2000 sensors)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Project Tenure</label>
+        <select id="tenureSelect">
+          <option value="12">1 Year (12 months)</option>
+          <option value="24">2 Years (24 months)</option>
+          <option value="36" selected>3 Years (36 months)</option>
+          <option value="48">4 Years (48 months)</option>
+          <option value="60">5 Years (60 months)</option>
+        </select>
+      </div>
+      <div class="form-group" id="pricingModelGroup">
+        <label>Cloud Pricing Model</label>
+        <select id="pricingModelSelect">
+          <option value="1.0">On-Demand (pay-as-you-go)</option>
+          <option value="0.65">Reserved 1-Year (~35% saving)</option>
+          <option value="0.45">Reserved 3-Year (~55% saving)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Currency</label>
+        <select id="currencySelect">
+          <option value="USD">USD ($)</option>
+          <option value="EUR">EUR (€)</option>
+          <option value="GBP">GBP (£)</option>
+          <option value="INR">INR (₹)</option>
+          <option value="AUD">AUD (A$)</option>
+          <option value="AED">AED (د.إ)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Organisation / Project Name</label>
+        <input type="text" id="orgName" placeholder="e.g. Acme Corp — Site Survey 2025">
+      </div>
+    </div>
+
+    <hr class="section-divider">
+    <h2 style="font-size:14px;margin-bottom:12px;">📡 2 — Sensor Configuration</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:14px;">
+      Enter the count of each sensor type. The total must not exceed the maximum for the selected project type.
+      Storage is automatically calculated from sensor data rates.
+    </p>
+    <div class="sensor-grid" style="margin-bottom:12px;">
+      <div class="sensor-item">
+        <label>High Rate Pressure <span class="badge badge-hr">1,296 MB/sensor/month</span></label>
+        <input type="number" id="sensorHR" value="0" min="0" oninput="onSensorChange('HR')">
+        <div class="footnote" id="sensorHR_note"></div>
+      </div>
+      <div class="sensor-item">
+        <label>Hydrophone <span class="badge badge-hy">100 MB/sensor/month</span></label>
+        <input type="number" id="sensorHY" value="0" min="0" oninput="onSensorChange('HY')">
+        <div class="footnote" id="sensorHY_note"></div>
+      </div>
+      <div class="sensor-item">
+        <label>Low Rate <span class="badge badge-lr">10 MB/sensor/month</span></label>
+        <input type="number" id="sensorLR" value="0" min="0" oninput="onSensorChange('LR')">
+        <div class="footnote" id="sensorLR_note"></div>
+      </div>
+    </div>
+    <div id="sensorTotalMsg" class="sensor-total"></div>
+
+    <div style="margin-top:20px;display:flex;gap:12px;align-items:center;">
+      <button class="btn-primary" onclick="calculate()">📊 Generate Estimate</button>
+      <button class="btn-reset" onclick="resetForm()">↺ Reset</button>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="resultsSection" style="display:none;">
+
+    <div class="card">
+      <div class="actions-bar">
+        <h2 style="margin:0;border:none;padding:0;">📋 Estimation Report</h2>
+        <div class="actions-right no-print">
+          <button class="btn-print" onclick="window.print()">🖨 Print / Save PDF</button>
+        </div>
+      </div>
+
+      <!-- Reference Banner -->
+      <div class="ref-banner">
+        <div>
+          <strong>Reference:</strong> <span id="refId"></span> &nbsp;|&nbsp;
+          <strong>Project:</strong> <span id="refOrg"></span> &nbsp;|&nbsp;
+          <strong>Date:</strong> <span id="refDate"></span>
+        </div>
+        <div id="platformIndicator"></div>
+      </div>
+
+      <!-- Summary Cards -->
+      <div class="summary-banner" id="summaryBanner"></div>
+
+      <!-- On-prem note -->
+      <div id="onpremNote" style="display:none;" class="cost-mode-note">
+        ⚠ <strong>On-Premises Pricing Note:</strong> Costs shown are <em>estimated CapEx</em> (one-time hardware purchase)
+        and <em>annual OpEx</em> (power, cooling, and support). Total cost of ownership includes both over the project tenure.
+      </div>
+
+      <!-- VM TABLE -->
+      <h3>🖥 Virtual Machine Components</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Component</th>
+            <th>VM Specification</th>
+            <th class="text-center">Instance / SKU</th>
+            <th class="text-center">Qty</th>
+            <th class="text-right">Unit Cost/Month</th>
+            <th class="text-right">Monthly Subtotal</th>
+            <th class="text-right">Total (<span class="tenure-label"></span>)</th>
+          </tr>
+        </thead>
+        <tbody id="vmTableBody"></tbody>
+        <tfoot id="vmTableFoot"></tfoot>
+      </table>
+      <p class="footnote">* All VM instances include OS Disk. Data disk sizes shown are minimum provisioned storage.</p>
+
+      <!-- BLOCK STORAGE TABLE -->
+      <h3>💾 Block / Data Storage (per VM)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Storage Type</th>
+            <th class="text-right">OS Disk (GB)</th>
+            <th class="text-right">Data Disk (GB)</th>
+            <th class="text-right">Qty</th>
+            <th class="text-right">Total Storage (GB)</th>
+            <th class="text-right">Cost/GB/Month</th>
+            <th class="text-right">Monthly Cost</th>
+            <th class="text-right">Total (<span class="tenure-label"></span>)</th>
+          </tr>
+        </thead>
+        <tbody id="storageTableBody"></tbody>
+        <tfoot id="storageTableFoot"></tfoot>
+      </table>
+
+      <!-- OBJECT STORAGE TABLE -->
+      <h3 id="objStorageHeading">☁ Object Storage</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Sensor Type</th>
+            <th>Sensors</th>
+            <th class="text-right">Data Rate (MB/month)</th>
+            <th class="text-right">Monthly Data (GB)</th>
+            <th class="text-right">Total Data (<span class="tenure-label"></span>) GB</th>
+            <th class="text-right">Cost/GB/Month</th>
+            <th class="text-right">Monthly Cost</th>
+            <th class="text-right">Total (<span class="tenure-label"></span>)</th>
+          </tr>
+        </thead>
+        <tbody id="objStorageBody"></tbody>
+        <tfoot id="objStorageFoot"></tfoot>
+      </table>
+      <div id="objStorageNote" class="footnote" style="margin-top:4px;"></div>
+
+      <!-- COST SUMMARY TABLE -->
+      <h3>💰 Cost Summary</h3>
+      <table id="costSummaryTable">
+        <thead>
+          <tr><th>Cost Component</th><th class="text-right">Monthly</th><th class="text-right">Annual</th><th class="text-right">Total (Tenure)</th></tr>
+        </thead>
+        <tbody id="costSummaryBody"></tbody>
+        <tfoot id="costSummaryFoot"></tfoot>
+      </table>
+
+      <div class="disclaimer">
+        <strong>Disclaimer:</strong> All prices are approximate estimates based on publicly available cloud provider pricing and typical hardware market rates.
+        Actual costs may vary based on negotiated rates, reserved instance commitments, data egress, support tiers, and market fluctuations.
+        Cloud prices vary by region — apply the correct regional multiplier.
+        On-premises estimates exclude network infrastructure, rack space, and civil works.
+        This document is for planning purposes only and does not constitute a formal quotation.
+      </div>
+
+      <div style="margin-top:16px;display:flex;gap:10px;" class="no-print">
+        <button class="btn-print" onclick="window.print()">🖨 Print / Save PDF</button>
+        <button class="btn-reset" onclick="scrollTo(0,0)">↑ Back to Top</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADVANCED PRICING -->
+  <div class="card no-print">
+    <details id="advancedDetails">
+      <summary>⚙ Advanced — Edit Pricing Assumptions</summary>
+      <div class="pricing-grid">
+        <div class="pricing-section">
+          <h4>☁ AWS (USD/month, us-east-1 base)</h4>
+          <div class="price-row"><span>VM: 4vCPU / 8GB (c5.xlarge)</span><input type="number" id="p_aws_vm_small" value="125" step="1"></div>
+          <div class="price-row"><span>VM: 4vCPU / 16GB (m5.xlarge)</span><input type="number" id="p_aws_vm_large" value="168" step="1"></div>
+          <div class="price-row"><span>VM: 8vCPU / 32GB (r5.2xlarge)</span><input type="number" id="p_aws_vm_xlarge" value="480" step="1"></div>
+          <div class="price-row"><span>EBS (block) $/GB/month</span><input type="number" id="p_aws_ebs" value="0.08" step="0.001"></div>
+          <div class="price-row"><span>S3 storage $/GB/month</span><input type="number" id="p_aws_s3" value="0.023" step="0.001"></div>
+        </div>
+        <div class="pricing-section">
+          <h4>☁ Azure (USD/month, East US base)</h4>
+          <div class="price-row"><span>VM: 4vCPU / 8GB (F4s_v2)</span><input type="number" id="p_az_vm_small" value="138" step="1"></div>
+          <div class="price-row"><span>VM: 4vCPU / 16GB (D4s_v5)</span><input type="number" id="p_az_vm_large" value="175" step="1"></div>
+          <div class="price-row"><span>VM: 8vCPU / 32GB (E8s_v5)</span><input type="number" id="p_az_vm_xlarge" value="420" step="1"></div>
+          <div class="price-row"><span>Managed Disk $/GB/month</span><input type="number" id="p_az_disk" value="0.115" step="0.001"></div>
+          <div class="price-row"><span>Blob storage $/GB/month</span><input type="number" id="p_az_blob" value="0.018" step="0.001"></div>
+        </div>
+        <div class="pricing-section">
+          <h4>🖥 On-Premises (USD, per unit)</h4>
+          <div class="price-row"><span>Server: 4vCPU / 8GB (CapEx)</span><input type="number" id="p_op_srv_small" value="2200" step="100"></div>
+          <div class="price-row"><span>Server: 4vCPU / 16GB (CapEx)</span><input type="number" id="p_op_srv_large" value="3000" step="100"></div>
+          <div class="price-row"><span>Server: 8vCPU / 32GB (CapEx)</span><input type="number" id="p_op_srv_xlarge" value="5500" step="100"></div>
+          <div class="price-row"><span>Block storage $/GB (CapEx)</span><input type="number" id="p_op_disk" value="0.12" step="0.01"></div>
+          <div class="price-row"><span>NFS/FS storage $/GB (CapEx)</span><input type="number" id="p_op_nfs" value="0.08" step="0.01"></div>
+          <div class="price-row"><span>Annual support (% of CapEx)</span><input type="number" id="p_op_support" value="18" step="1"></div>
+          <div class="price-row"><span>Power+cooling/server/year ($)</span><input type="number" id="p_op_power" value="550" step="50"></div>
+        </div>
+      </div>
+      <div style="padding:0 16px 14px;"><button class="btn-primary" onclick="calculate()">Apply &amp; Recalculate</button></div>
+    </details>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  AUTH GATE — runs before anything else
+// ═══════════════════════════════════════════════════════════
+(async function initAuth() {
+  try {
+    const r = await fetch('/api/checkSession');
+    if (!r.ok) { window.location.href = '/auth.html'; return; }
+    const d = await r.json();
+    document.getElementById('userEmailDisplay').textContent = '👤 ' + d.email;
+    document.getElementById('authOverlay').style.display = 'none';
+  } catch {
+    window.location.href = '/auth.html';
+  }
+})();
+
+async function logout() {
+  await fetch('/api/logout').catch(() => {});
+  window.location.href = '/auth.html';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DATA  (sourced from WLM Sizing and Estimation sheet)
+// ═══════════════════════════════════════════════════════════
+const PROJECT_TYPES = {
+  'Lite':         { sensors: 5,    vms: { Database: 1, Importers: 1, Analytics: 1, 'API Layer': 1 } },
+  'Lite Plus':    { sensors: 10,   vms: { Database: 1, Importers: 1, Analytics: 1, 'API Layer': 1 } },
+  'Standard':     { sensors: 20,   vms: { Database: 1, Importers: 1, Analytics: 1, 'API Layer': 1 } },
+  'Advance':      { sensors: 50,   vms: { Database: 1, Importers: 2, Analytics: 1, 'API Layer': 1 } },
+  'Advance Plus': { sensors: 100,  vms: { Database: 3, Importers: 3, Analytics: 2, 'API Layer': 1 } },
+  'Pro':          { sensors: 300,  vms: { Database: 3, Importers: 3, Analytics: 2, 'API Layer': 1 } },
+  'Pro Max':      { sensors: 500,  vms: { Database: 3, Importers: 4, Analytics: 3, 'API Layer': 2 } },
+  'Enterprise':   { sensors: 1000, vms: { Database: 3, Importers: 5, Analytics: 3, 'API Layer': 2 } },
+  'Enterprise++': { sensors: 2000, vms: { Database: 3, Importers: 6, Analytics: 4, 'API Layer': 2 } }
+};
+
+// VM specs: [RAM_GB, vCPU, OS_Disk_GB, Data_Disk_GB]
+// Source: WLM Sizing and Estimation sheet copy-0908c0c9.xlsx
+const VM_SPECS = {
+  'Lite':         { Database: [8,4,50,50],    Importers: [8,4,50,100],   Analytics: [8,4,50,50],   'API Layer': [8,4,50,50]   },
+  'Lite Plus':    { Database: [8,4,50,50],    Importers: [8,4,50,100],   Analytics: [8,4,50,50],   'API Layer': [8,4,50,50]   },
+  'Standard':     { Database: [16,4,50,100],  Importers: [8,4,50,100],   Analytics: [8,4,50,50],   'API Layer': [8,4,50,50]   },
+  'Advance':      { Database: [16,4,50,100],  Importers: [8,4,50,100],   Analytics: [8,4,50,50],   'API Layer': [8,4,50,50]   },
+  'Advance Plus': { Database: [16,4,50,250],  Importers: [8,4,50,100],   Analytics: [16,4,50,100], 'API Layer': [16,4,50,100] },
+  'Pro':          { Database: [32,4,50,500],  Importers: [16,4,50,100],  Analytics: [16,4,50,100], 'API Layer': [16,4,50,100] },
+  'Pro Max':      { Database: [32,4,50,900],  Importers: [16,4,50,100],  Analytics: [16,4,50,100], 'API Layer': [16,4,50,100] },
+  'Enterprise':   { Database: [32,8,50,1800], Importers: [16,4,50,100],  Analytics: [16,4,50,100], 'API Layer': [16,4,50,100] },
+  'Enterprise++': { Database: [32,8,50,3500], Importers: [16,4,50,100],  Analytics: [16,4,50,100], 'API Layer': [16,4,50,100] }
+};
+
+// Sensor data rates MB/month per sensor
+const SENSOR_RATES = { HR: 1296, HY: 100, LR: 10 };
+
+// Regions
+const REGIONS = {
+  aws: [
+    { name: 'US East (N. Virginia)',   m: 1.00 },
+    { name: 'US West (Oregon)',         m: 1.03 },
+    { name: 'EU (Ireland)',             m: 1.13 },
+    { name: 'EU (Frankfurt)',           m: 1.16 },
+    { name: 'AP South (Mumbai)',        m: 1.10 },
+    { name: 'AP Southeast (Singapore)',m: 1.14 },
+    { name: 'AP Southeast (Sydney)',    m: 1.19 },
+    { name: 'AP Northeast (Tokyo)',     m: 1.21 },
+    { name: 'Middle East (UAE)',        m: 1.26 },
+    { name: 'SA East (São Paulo)',      m: 1.30 }
+  ],
+  azure: [
+    { name: 'East US',           m: 1.00 },
+    { name: 'West US 2',         m: 1.03 },
+    { name: 'UK South',          m: 1.13 },
+    { name: 'North Europe',      m: 1.12 },
+    { name: 'West Europe',       m: 1.14 },
+    { name: 'Southeast Asia',    m: 1.11 },
+    { name: 'Australia East',    m: 1.19 },
+    { name: 'Central India',     m: 1.08 },
+    { name: 'UAE North',         m: 1.21 },
+    { name: 'Brazil South',      m: 1.28 }
+  ],
+  onprem: [
+    { name: 'North America',   m: 1.00 },
+    { name: 'Europe',          m: 1.25 },
+    { name: 'Asia Pacific',    m: 1.15 },
+    { name: 'Middle East',     m: 1.30 },
+    { name: 'Latin America',   m: 1.22 },
+    { name: 'Africa',          m: 1.35 }
+  ]
+};
+
+const INSTANCE_TYPES = {
+  aws:   { small: 'c5.xlarge',           large: 'm5.xlarge',          xlarge: 'r5.2xlarge'          },
+  azure: { small: 'Standard_F4s_v2',     large: 'Standard_D4s_v5',    xlarge: 'Standard_E8s_v5'     },
+  onprem:{ small: 'Server (4vCPU/8GB)',  large: 'Server (4vCPU/16GB)', xlarge: 'Server (8vCPU/32GB)' }
+};
+
+const STORAGE_LABELS = {
+  aws:   { block: 'Amazon EBS (gp3)',       obj: 'Amazon S3'        },
+  azure: { block: 'Azure Managed Disk',     obj: 'Azure Blob Storage (Hot)' },
+  onprem:{ block: 'SAN / DAS Storage',      obj: 'NFS / File System' }
+};
+
+const CURRENCY_RATES = { USD:1, EUR:0.92, GBP:0.79, INR:83.1, AUD:1.53, AED:3.67 };
+const CURRENCY_SYMBOLS = { USD:'$', EUR:'€', GBP:'£', INR:'₹', AUD:'A$', AED:'د.إ' };
+
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+let currentPlatform = 'aws';
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+window.onload = function() {
+  populateRegions('aws');
+  onProjectTypeChange();
+  document.getElementById('refDate').textContent = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+};
+
+function setPlatform(p) {
+  currentPlatform = p;
+  document.querySelectorAll('.platform-tab').forEach(t => t.classList.toggle('active', t.dataset.p === p));
+  populateRegions(p);
+  document.getElementById('pricingModelGroup').style.display = (p === 'onprem') ? 'none' : '';
+  document.getElementById('onpremNote').style.display = (p === 'onprem') ? '' : 'none';
+}
+
+function populateRegions(p) {
+  const sel = document.getElementById('regionSelect');
+  sel.innerHTML = REGIONS[p].map(r => `<option value="${r.m}">${r.name}</option>`).join('');
+}
+
+function onProjectTypeChange() {
+  const pt = document.getElementById('projectTypeSelect').value;
+  const max = PROJECT_TYPES[pt].sensors;
+  // Auto-populate all 3 sensor types to the project max
+  ['sensorHR','sensorHY','sensorLR'].forEach(id => {
+    const el = document.getElementById(id);
+    el.value = max;
+    el.max   = max;
+  });
+  onSensorChange(null);
+}
+
+function onSensorChange(changed) {
+  const pt  = document.getElementById('projectTypeSelect').value;
+  const max = PROJECT_TYPES[pt].sensors;
+  const ids = { HR:'sensorHR', HY:'sensorHY', LR:'sensorLR' };
+
+  // Clamp changed field to [0, max]
+  if (changed) {
+    const el  = document.getElementById(ids[changed]);
+    let val   = parseInt(el.value) || 0;
+    if (val < 0)   val = 0;
+    if (val > max) val = max;
+    el.value  = val;
+  }
+
+  const hr  = parseInt(document.getElementById('sensorHR').value)||0;
+  const hy  = parseInt(document.getElementById('sensorHY').value)||0;
+  const lr  = parseInt(document.getElementById('sensorLR').value)||0;
+
+  // Per-field notes
+  [['HR', hr], ['HY', hy], ['LR', lr]].forEach(([k, v]) => {
+    const note = document.getElementById('sensor'+k+'_note');
+    note.textContent = v === max
+      ? `Max (${max}) reached`
+      : `${v} of max ${max}`;
+    note.style.color = v > max ? 'var(--warn)' : 'var(--muted)';
+  });
+
+  const msg = document.getElementById('sensorTotalMsg');
+  if (hr+hy+lr === 0) {
+    msg.textContent = 'No sensors entered — set at least one type above.';
+    msg.className   = 'sensor-total warn';
+  } else {
+    msg.textContent = `High Rate: ${hr} · Hydrophone: ${hy} · Low Rate: ${lr} · Each category max: ${max} sensors (${pt})`;
+    msg.className   = 'sensor-total';
+  }
+}
+
+function resetForm() {
+  document.getElementById('orgName').value = '';
+  document.getElementById('projectTypeSelect').value = 'Lite';
+  document.getElementById('tenureSelect').value = '36';
+  onProjectTypeChange();   // re-populates sensor fields to Lite max (5)
+  document.getElementById('resultsSection').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════
+function fmtCurrency(v) {
+  const cur = document.getElementById('currencySelect').value;
+  const rate = CURRENCY_RATES[cur];
+  const sym = CURRENCY_SYMBOLS[cur];
+  const converted = v * rate;
+  if (converted >= 1000000) return sym + (converted/1000000).toFixed(2) + 'M';
+  if (converted >= 1000) return sym + Math.round(converted).toLocaleString();
+  return sym + converted.toFixed(2);
+}
+
+function getPrice(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+function getVmCostMonth(ram, platform) {
+  const isXlarge = (ram >= 32);
+  const isLarge  = (ram >= 16);
+  if (platform === 'aws')   return isXlarge ? getPrice('p_aws_vm_xlarge') : isLarge ? getPrice('p_aws_vm_large') : getPrice('p_aws_vm_small');
+  if (platform === 'azure') return isXlarge ? getPrice('p_az_vm_xlarge')  : isLarge ? getPrice('p_az_vm_large')  : getPrice('p_az_vm_small');
+  return isXlarge ? getPrice('p_op_srv_xlarge') : isLarge ? getPrice('p_op_srv_large') : getPrice('p_op_srv_small');
+}
+
+function getBlockStorageCostPerGB(platform) {
+  if (platform === 'aws')   return getPrice('p_aws_ebs');
+  if (platform === 'azure') return getPrice('p_az_disk');
+  return getPrice('p_op_disk');
+}
+
+function getObjStorageCostPerGB(platform) {
+  if (platform === 'aws')   return getPrice('p_aws_s3');
+  if (platform === 'azure') return getPrice('p_az_blob');
+  return getPrice('p_op_nfs');
+}
+
+function getInstanceSku(ram, platform) {
+  return INSTANCE_TYPES[platform][ram >= 32 ? 'xlarge' : ram >= 16 ? 'large' : 'small'];
+}
+
+function genRefId() {
+  const d = new Date();
+  return `WLM-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${Math.random().toString(36).substr(2,5).toUpperCase()}`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MAIN CALCULATE
+// ═══════════════════════════════════════════════════════════
+function calculate() {
+  const platform = currentPlatform;
+  const pt = document.getElementById('projectTypeSelect').value;
+  const tenure = parseInt(document.getElementById('tenureSelect').value);
+  const regionMultiplier = parseFloat(document.getElementById('regionSelect').value);
+  const pricingFactor = platform === 'onprem' ? 1.0 : parseFloat(document.getElementById('pricingModelSelect').value);
+  const hr = parseInt(document.getElementById('sensorHR').value)||0;
+  const hy = parseInt(document.getElementById('sensorHY').value)||0;
+  const lr = parseInt(document.getElementById('sensorLR').value)||0;
+  const org = document.getElementById('orgName').value || 'N/A';
+  const cur = document.getElementById('currencySelect').value;
+  const regionName = document.getElementById('regionSelect').options[document.getElementById('regionSelect').selectedIndex].text;
+
+  const specs = VM_SPECS[pt];
+  const vmCounts = PROJECT_TYPES[pt].vms;
+  const storageLabel = STORAGE_LABELS[platform];
+  const isOnprem = (platform === 'onprem');
+  const supportRate = getPrice('p_op_support') / 100;
+  const powerPerServer = getPrice('p_op_power');
+
+  // Set up labels
+  document.querySelectorAll('.tenure-label').forEach(el => el.textContent = `${tenure}mo`);
+  document.getElementById('refId').textContent = genRefId();
+  document.getElementById('refOrg').textContent = org;
+  document.getElementById('refDate').textContent = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+
+  // Platform indicator
+  const piClass = { aws:'pi-aws', azure:'pi-azure', onprem:'pi-onprem' }[platform];
+  const piLabel = { aws:'☁ Amazon Web Services', azure:'☁ Microsoft Azure', onprem:'🖥 On-Premises' }[platform];
+  document.getElementById('platformIndicator').innerHTML =
+    `<span class="platform-indicator ${piClass}">${piLabel} · ${regionName}</span>`;
+
+  document.getElementById('onpremNote').style.display = isOnprem ? '' : 'none';
+
+  // ---- VM TABLE ----
+  let vmTotal_monthly = 0, vmTotal_tenure = 0, vmCapex = 0;
+  let row = 1;
+  let vmRows = '';
+  const componentOrder = ['Database', 'Importers', 'Analytics', 'API Layer'];
+
+  for (const comp of componentOrder) {
+    const [ram, vcpu, osDisk, dataDisk] = specs[comp];
+    const qty = vmCounts[comp];
+    const unitCost = getVmCostMonth(ram, platform);
+    const sku = getInstanceSku(ram, platform);
+    const rm = regionMultiplier;
+
+    if (isOnprem) {
+      const unitCapex = unitCost * rm;
+      const totalCapex = unitCapex * qty;
+      vmCapex += totalCapex;
+      vmRows += `<tr>
+        <td>${row++}</td><td><strong>${comp}</strong></td>
+        <td>
+          <span class="spec-chip">${vcpu} vCPU</span>
+          <span class="spec-chip">${ram} GB RAM</span>
+          <span class="spec-chip">OS: ${osDisk} GB</span>
+          <span class="spec-chip">Data: ${dataDisk} GB</span>
+        </td>
+        <td class="text-center">${sku}</td>
+        <td class="text-center"><span class="qty-badge">${qty}</span></td>
+        <td class="text-right">—</td>
+        <td class="text-right cost-col">${fmtCurrency(unitCapex)} <small style="color:var(--muted)">CapEx/unit</small></td>
+        <td class="text-right total-col">${fmtCurrency(totalCapex)}</td>
+      </tr>`;
+    } else {
+      const unitMonthly = unitCost * rm * pricingFactor;
+      const subtotalMonthly = unitMonthly * qty;
+      const subtotalTenure = subtotalMonthly * tenure;
+      vmTotal_monthly += subtotalMonthly;
+      vmTotal_tenure  += subtotalTenure;
+      vmRows += `<tr>
+        <td>${row++}</td><td><strong>${comp}</strong></td>
+        <td>
+          <span class="spec-chip">${vcpu} vCPU</span>
+          <span class="spec-chip">${ram} GB RAM</span>
+          <span class="spec-chip">OS: ${osDisk} GB</span>
+          <span class="spec-chip">Data: ${dataDisk} GB</span>
+        </td>
+        <td class="text-center">${sku}</td>
+        <td class="text-center"><span class="qty-badge">${qty}</span></td>
+        <td class="text-right">${fmtCurrency(unitMonthly)}</td>
+        <td class="text-right cost-col">${fmtCurrency(subtotalMonthly)}</td>
+        <td class="text-right total-col">${fmtCurrency(subtotalTenure)}</td>
+      </tr>`;
+    }
+  }
+
+  document.getElementById('vmTableBody').innerHTML = vmRows;
+  document.getElementById('vmTableFoot').innerHTML = isOnprem
+    ? `<tr><td colspan="7" class="text-right">Total VM Hardware CapEx:</td><td class="text-right">${fmtCurrency(vmCapex)}</td></tr>`
+    : `<tr><td colspan="6" class="text-right">VM Totals:</td><td class="text-right">${fmtCurrency(vmTotal_monthly)}</td><td class="text-right">${fmtCurrency(vmTotal_tenure)}</td></tr>`;
+
+  // ---- BLOCK STORAGE TABLE ----
+  const diskCostPerGB = getBlockStorageCostPerGB(platform);
+  let stTotal_monthly = 0, stTotal_tenure = 0, stCapex = 0;
+  let stRows = '';
+  for (const comp of componentOrder) {
+    const [ram, vcpu, osDisk, dataDisk] = specs[comp];
+    const qty = vmCounts[comp];
+    const totalGB = (osDisk + dataDisk) * qty;
+
+    if (isOnprem) {
+      const capex = totalGB * diskCostPerGB * regionMultiplier;
+      stCapex += capex;
+      stRows += `<tr>
+        <td>${comp}</td><td>${storageLabel.block}</td>
+        <td class="text-right">${osDisk}</td><td class="text-right">${dataDisk}</td>
+        <td class="text-right">${qty}</td><td class="text-right">${totalGB}</td>
+        <td class="text-right">${fmtCurrency(diskCostPerGB)}/GB</td>
+        <td class="text-right">—</td>
+        <td class="text-right cost-col">${fmtCurrency(capex)}</td>
+      </tr>`;
+    } else {
+      const monthly = totalGB * diskCostPerGB * regionMultiplier;
+      const tenureCost = monthly * tenure;
+      stTotal_monthly += monthly;
+      stTotal_tenure  += tenureCost;
+      stRows += `<tr>
+        <td>${comp}</td><td>${storageLabel.block}</td>
+        <td class="text-right">${osDisk}</td><td class="text-right">${dataDisk}</td>
+        <td class="text-right">${qty}</td><td class="text-right">${totalGB}</td>
+        <td class="text-right">${fmtCurrency(diskCostPerGB)}/GB</td>
+        <td class="text-right cost-col">${fmtCurrency(monthly)}</td>
+        <td class="text-right total-col">${fmtCurrency(tenureCost)}</td>
+      </tr>`;
+    }
+  }
+  document.getElementById('storageTableBody').innerHTML = stRows;
+  document.getElementById('storageTableFoot').innerHTML = isOnprem
+    ? `<tr><td colspan="8" class="text-right">Total Block Storage CapEx:</td><td class="text-right">${fmtCurrency(stCapex)}</td></tr>`
+    : `<tr><td colspan="7" class="text-right">Storage Totals:</td><td class="text-right">${fmtCurrency(stTotal_monthly)}</td><td class="text-right">${fmtCurrency(stTotal_tenure)}</td></tr>`;
+
+  // ---- OBJECT STORAGE TABLE ----
+  const objHeading = {
+    aws:    '☁ Object Storage — Amazon S3',
+    azure:  '☁ Object Storage — Azure Blob Storage',
+    onprem: '🗄 Object Storage — NFS / File System'
+  }[platform];
+  document.getElementById('objStorageHeading').textContent = objHeading;
+
+  const objCostPerGB = getObjStorageCostPerGB(platform);
+  const sensorData = [
+    { name: 'High Rate Pressure', count: hr, rate: SENSOR_RATES.HR },
+    { name: 'Hydrophone',          count: hy, rate: SENSOR_RATES.HY },
+    { name: 'Low Rate',            count: lr, rate: SENSOR_RATES.LR }
+  ];
+  let objTotal_monthly = 0, objTotal_tenure = 0, objCapex = 0;
+  let objRows = '';
+  for (const s of sensorData) {
+    if (s.count === 0) continue;
+    const monthlyGB = (s.count * s.rate) / 1024;
+    const tenureGB  = monthlyGB * tenure;
+
+    if (isOnprem) {
+      const capex = tenureGB * objCostPerGB * regionMultiplier;
+      objCapex += capex;
+      objRows += `<tr>
+        <td>${s.name}</td><td class="text-center">${s.count}</td>
+        <td class="text-right">${s.rate.toLocaleString()} MB</td>
+        <td class="text-right">${monthlyGB.toFixed(2)} GB</td>
+        <td class="text-right">${tenureGB.toFixed(1)} GB</td>
+        <td class="text-right">${fmtCurrency(objCostPerGB)}/GB</td>
+        <td class="text-right">—</td>
+        <td class="text-right cost-col">${fmtCurrency(capex)}</td>
+      </tr>`;
+    } else {
+      const monthly = monthlyGB * objCostPerGB * regionMultiplier;
+      const tenureCost = monthly * tenure;
+      objTotal_monthly += monthly;
+      objTotal_tenure  += tenureCost;
+      objRows += `<tr>
+        <td>${s.name}</td><td class="text-center">${s.count}</td>
+        <td class="text-right">${s.rate.toLocaleString()} MB</td>
+        <td class="text-right">${monthlyGB.toFixed(2)} GB</td>
+        <td class="text-right">${tenureGB.toFixed(1)} GB</td>
+        <td class="text-right">${fmtCurrency(objCostPerGB)}/GB</td>
+        <td class="text-right cost-col">${fmtCurrency(monthly)}</td>
+        <td class="text-right total-col">${fmtCurrency(tenureCost)}</td>
+      </tr>`;
+    }
+  }
+  if (objRows === '') {
+    objRows = `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:14px;">No sensors entered — add sensor counts above</td></tr>`;
+  }
+  document.getElementById('objStorageBody').innerHTML = objRows;
+  document.getElementById('objStorageFoot').innerHTML = isOnprem
+    ? `<tr><td colspan="7" class="text-right">Total Object Storage CapEx:</td><td class="text-right">${fmtCurrency(objCapex)}</td></tr>`
+    : `<tr><td colspan="6" class="text-right">Object Storage Totals:</td><td class="text-right">${fmtCurrency(objTotal_monthly)}</td><td class="text-right">${fmtCurrency(objTotal_tenure)}</td></tr>`;
+
+  const objNote = { aws: '* S3 Standard storage. Data transfer and PUT/GET requests billed separately.',
+    azure: '* Blob Storage Hot tier. Excludes data retrieval operations and egress fees.',
+    onprem: '* NFS/filesystem hardware CapEx amortized over project tenure. Excludes backup media.' }[platform];
+  document.getElementById('objStorageNote').textContent = objNote;
+
+  // ---- COST SUMMARY TABLE ----
+  let csRows = '', csFoot = '';
+  if (isOnprem) {
+    const totalCapex = vmCapex + stCapex + objCapex;
+    const totalServers = Object.values(vmCounts).reduce((a,b)=>a+b,0);
+    const annualSupport = totalCapex * supportRate;
+    const annualPower   = totalServers * powerPerServer * regionMultiplier;
+    const annualOpex    = annualSupport + annualPower;
+    const years = tenure / 12;
+    const totalTCO     = totalCapex + (annualOpex * years);
+
+    csRows = `
+      <tr><td>Hardware CapEx (VMs)</td><td class="text-right">—</td><td class="text-right">—</td><td class="text-right cost-col">${fmtCurrency(vmCapex)}</td></tr>
+      <tr><td>Block Storage CapEx</td><td class="text-right">—</td><td class="text-right">—</td><td class="text-right cost-col">${fmtCurrency(stCapex)}</td></tr>
+      <tr><td>NFS / Object Storage CapEx</td><td class="text-right">—</td><td class="text-right">—</td><td class="text-right cost-col">${fmtCurrency(objCapex)}</td></tr>
+      <tr><td>Annual Support &amp; Maintenance (${Math.round(supportRate*100)}% of CapEx)</td><td class="text-right">—</td><td class="text-right cost-col">${fmtCurrency(annualSupport)}</td><td class="text-right cost-col">${fmtCurrency(annualSupport*years)}</td></tr>
+      <tr><td>Power &amp; Cooling (${totalServers} servers)</td><td class="text-right">—</td><td class="text-right cost-col">${fmtCurrency(annualPower)}</td><td class="text-right cost-col">${fmtCurrency(annualPower*years)}</td></tr>`;
+    csFoot = `<tr><td><strong>Total Cost of Ownership (${Math.round(years)}yr)</strong></td><td class="text-right">—</td><td class="text-right">${fmtCurrency(annualOpex)}</td><td class="text-right total-col">${fmtCurrency(totalTCO)}</td></tr>`;
+
+    // Summary cards
+    document.getElementById('summaryBanner').innerHTML = `
+      <div class="summary-card"><div class="value">${fmtCurrency(totalCapex)}</div><div class="label">Total CapEx</div></div>
+      <div class="summary-card"><div class="value">${fmtCurrency(annualOpex)}</div><div class="label">Annual OpEx</div></div>
+      <div class="summary-card"><div class="value">${totalServers}</div><div class="label">Total Servers</div></div>
+      <div class="summary-card highlight"><div class="value">${fmtCurrency(totalTCO)}</div><div class="label">Total TCO (${Math.round(years)}yr)</div></div>`;
+  } else {
+    const totalMonthly = vmTotal_monthly + stTotal_monthly + objTotal_monthly;
+    const totalTenure  = vmTotal_tenure  + stTotal_tenure  + objTotal_tenure;
+    const totalAnnual  = totalMonthly * 12;
+    const totalVMs     = Object.values(vmCounts).reduce((a,b)=>a+b,0);
+    const pLabel = { '1.0':'On-Demand', '0.65':'Reserved 1yr', '0.45':'Reserved 3yr' }[document.getElementById('pricingModelSelect').value] || '';
+
+    csRows = `
+      <tr><td>Virtual Machines (${totalVMs} total)</td><td class="text-right cost-col">${fmtCurrency(vmTotal_monthly)}</td><td class="text-right">${fmtCurrency(vmTotal_monthly*12)}</td><td class="text-right total-col">${fmtCurrency(vmTotal_tenure)}</td></tr>
+      <tr><td>${storageLabel.block}</td><td class="text-right cost-col">${fmtCurrency(stTotal_monthly)}</td><td class="text-right">${fmtCurrency(stTotal_monthly*12)}</td><td class="text-right total-col">${fmtCurrency(stTotal_tenure)}</td></tr>
+      <tr><td>${storageLabel.obj}</td><td class="text-right cost-col">${fmtCurrency(objTotal_monthly)}</td><td class="text-right">${fmtCurrency(objTotal_monthly*12)}</td><td class="text-right total-col">${fmtCurrency(objTotal_tenure)}</td></tr>`;
+    csFoot = `<tr><td><strong>Total (${pLabel}, ${regionName})</strong></td><td class="text-right total-col">${fmtCurrency(totalMonthly)}</td><td class="text-right total-col">${fmtCurrency(totalAnnual)}</td><td class="text-right total-col">${fmtCurrency(totalTenure)}</td></tr>`;
+
+    document.getElementById('summaryBanner').innerHTML = `
+      <div class="summary-card"><div class="value">${fmtCurrency(totalMonthly)}</div><div class="label">Monthly Cost</div></div>
+      <div class="summary-card"><div class="value">${fmtCurrency(totalAnnual)}</div><div class="label">Annual Cost</div></div>
+      <div class="summary-card"><div class="value">${totalVMs}</div><div class="label">Total VMs</div></div>
+      <div class="summary-card highlight"><div class="value">${fmtCurrency(totalTenure)}</div><div class="label">Total (${tenure}mo)</div></div>`;
+  }
+  document.getElementById('costSummaryBody').innerHTML = csRows;
+  document.getElementById('costSummaryFoot').innerHTML = csFoot;
+
+  document.getElementById('resultsSection').style.display = '';
+  document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+</script>
+</body>
+</html>
