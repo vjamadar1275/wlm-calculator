@@ -1,0 +1,9 @@
+{
+  "name": "wlm-calculator-api",
+  "version": "1.0.0",
+  "description": "WLM Calculator API — OTP auth functions",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "@sendgrid/mail": "^8.1.0"
+  }
+}
