@@ -132,7 +132,7 @@ async function sendOtp() {
     userEmail = email;
     document.getElementById('sentTo').textContent = email;
     document.getElementById('emailSection').style.display = 'none';
-    document.getElementById('otpSection').style.display = '';
+    document.getElementById('otpSection').style.display = 'block';
     document.getElementById('otpInput').focus();
     startCountdown();
   } catch {
